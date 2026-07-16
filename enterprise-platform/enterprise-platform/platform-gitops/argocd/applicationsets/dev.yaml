@@ -1,0 +1,55 @@
+# ApplicationSet: dev
+#
+# AUTOMATED sync. Argo CD applies within ~3 minutes of a commit, prunes
+# resources deleted from Git, and reverts anything changed by hand.
+#
+# The git generator scans envs/dev/* and creates one Application per directory
+# it finds. Add a service directory -> get an Application. Nobody hand-writes
+# 30 Application manifests.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: dev-microservices
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions:
+  - missingkey=error
+  generators:
+  - git:
+      repoURL: https://github.com/YOUR_ORG/platform-gitops.git
+      revision: main
+      directories:
+      - path: envs/dev/*
+  template:
+    metadata:
+      name: dev-{{.path.basename}}
+      labels:
+        env: dev
+        service: '{{.path.basename}}'
+      finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    spec:
+      project: dev
+      source:
+        repoURL: https://github.com/YOUR_ORG/platform-gitops.git
+        targetRevision: main
+        path: '{{.path.path}}'
+        directory:
+          recurse: false
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: dev
+      revisionHistoryLimit: 10
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+        - CreateNamespace=false
+        retry:
+          limit: 3
+          backoff:
+            duration: 10s
+            factor: 2
+            maxDuration: 3m

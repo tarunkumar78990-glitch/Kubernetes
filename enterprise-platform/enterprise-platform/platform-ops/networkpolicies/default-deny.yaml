@@ -1,0 +1,128 @@
+# Default-deny for namespace dev.
+#
+# This is the foundation the per-service NetworkPolicies build on. Without
+# it, every pod can talk to every pod, and your per-service policies are
+# decorative. WITH it, a compromised recommendation pod cannot reach the
+# payment service at all.
+#
+# Apply this BEFORE deploying services, or you will lock yourself out
+# of a running system and spend an afternoon confused.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: dev
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+---
+# DNS must be allowed namespace-wide or nothing resolves. This is the
+# single most common "my NetworkPolicy broke everything" cause.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: dev
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - namespaceSelector: {}
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+---
+# Default-deny for namespace staging.
+#
+# This is the foundation the per-service NetworkPolicies build on. Without
+# it, every pod can talk to every pod, and your per-service policies are
+# decorative. WITH it, a compromised recommendation pod cannot reach the
+# payment service at all.
+#
+# Apply this BEFORE deploying services, or you will lock yourself out
+# of a running system and spend an afternoon confused.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: staging
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+---
+# DNS must be allowed namespace-wide or nothing resolves. This is the
+# single most common "my NetworkPolicy broke everything" cause.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: staging
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - namespaceSelector: {}
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+---
+# Default-deny for namespace prod.
+#
+# This is the foundation the per-service NetworkPolicies build on. Without
+# it, every pod can talk to every pod, and your per-service policies are
+# decorative. WITH it, a compromised recommendation pod cannot reach the
+# payment service at all.
+#
+# Apply this BEFORE deploying services, or you will lock yourself out
+# of a running system and spend an afternoon confused.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: prod
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+---
+# DNS must be allowed namespace-wide or nothing resolves. This is the
+# single most common "my NetworkPolicy broke everything" cause.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: prod
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - namespaceSelector: {}
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53

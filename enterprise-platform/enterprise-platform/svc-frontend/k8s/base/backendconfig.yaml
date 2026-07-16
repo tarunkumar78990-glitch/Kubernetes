@@ -1,0 +1,30 @@
+# BackendConfig is a GKE-specific CRD. It configures the Google Cloud load
+# balancer that sits in front of this Service.
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: frontend-backendconfig
+  namespace: ${NAMESPACE}
+  labels:
+    app: frontend
+spec:
+  healthCheck:
+    # THE important bit. Default is "/", which our app does not serve.
+    requestPath: /readyz
+    port: 8080
+    type: HTTP
+    checkIntervalSec: 10
+    timeoutSec: 5
+    healthyThreshold: 1
+    unhealthyThreshold: 3
+
+  # Drain in-flight requests before removing a backend. Must be shorter
+  # than the pod's terminationGracePeriodSeconds (40s) or the LB will
+  # still be sending traffic to a pod that has already exited.
+  connectionDraining:
+    drainingTimeoutSec: 30
+
+  # Cloud Armor and CDN would attach here in a real prod setup.
+  # securityPolicy:
+  #   name: platform-waf-policy
+  timeoutSec: 30

@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# Coverage / test output
+coverage/
+.nyc_output/
+junit.xml
+
+# ---- Secrets: never commit ----
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+!.eslintrc.json
+.gcp-keys/
+*-key.json
+credentials.json
+service-account*.json
+.env
+*.env
+!k8s/env/*.env
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+
+# Sonar
+.scannerwork/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp

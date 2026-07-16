@@ -1,0 +1,24 @@
+# Terraform
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+
+# ---- Secrets: never commit ----
+*.tfvars
+!*.tfvars.example
+*.json
+!*.tfvars.json.example
+.gcp-keys/
+*-key.json
+credentials.json
+service-account*.json
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp

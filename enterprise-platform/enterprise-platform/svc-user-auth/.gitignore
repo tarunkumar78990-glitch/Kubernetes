@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# Coverage
+.coverage
+coverage.xml
+htmlcov/
+
+# ---- Secrets: never commit ----
+*.json
+!package.json
+.gcp-keys/
+*-key.json
+credentials.json
+service-account*.json
+.env
+*.env
+!k8s/env/*.env
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+
+# Sonar
+.scannerwork/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp

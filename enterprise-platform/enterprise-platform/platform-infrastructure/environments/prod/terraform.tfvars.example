@@ -1,0 +1,17 @@
+# Copy to terraform.tfvars and fill in. terraform.tfvars is gitignored.
+project_id = "your-project-id-here"
+region     = "asia-south1"
+zone       = "asia-south1-a"
+
+# Your office/home public IP so you can reach the control plane.
+# Find it with: curl -s ifconfig.me
+authorized_cidrs = [
+  {
+    cidr_block   = "1.2.3.4/32"
+    display_name = "my-workstation"
+  },
+  {
+    cidr_block   = "10.30.16.0/24"
+    display_name = "tooling-subnet"
+  },
+]

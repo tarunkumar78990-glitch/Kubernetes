@@ -1,0 +1,52 @@
+# ApplicationSet: staging
+#
+# AUTOMATED sync, same as dev - deliberately. Staging must mirror prod's
+# manifests but not prod's process, so that the thing you test in staging is
+# the thing that ships.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: staging-microservices
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions:
+  - missingkey=error
+  generators:
+  - git:
+      repoURL: https://github.com/YOUR_ORG/platform-gitops.git
+      revision: main
+      directories:
+      - path: envs/staging/*
+  template:
+    metadata:
+      name: staging-{{.path.basename}}
+      labels:
+        env: staging
+        service: '{{.path.basename}}'
+      finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    spec:
+      project: staging
+      source:
+        repoURL: https://github.com/YOUR_ORG/platform-gitops.git
+        targetRevision: main
+        path: '{{.path.path}}'
+        directory:
+          recurse: false
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: staging
+      revisionHistoryLimit: 10
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+        - CreateNamespace=false
+        retry:
+          limit: 3
+          backoff:
+            duration: 10s
+            factor: 2
+            maxDuration: 3m

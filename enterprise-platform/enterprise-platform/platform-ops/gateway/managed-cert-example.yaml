@@ -1,0 +1,20 @@
+# HTTPS via a Google-managed certificate. Requires a real domain you
+# control, with an A record pointing at the reserved static IP.
+#
+#   gcloud compute addresses create dev-frontend-ip --global
+#   gcloud compute addresses describe dev-frontend-ip --global --format='value(address)'
+#   # create an A record: shop-dev.yourdomain.com -> that IP
+#
+# Then uncomment the annotations in ingress-dev.yaml and apply this.
+#
+# Provisioning takes 15-60 minutes and FAILS SILENTLY if DNS is not
+# already resolving. Check with:
+#   kubectl describe managedcertificate frontend-cert -n dev
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: frontend-cert
+  namespace: dev
+spec:
+  domains:
+  - shop-dev.yourdomain.com

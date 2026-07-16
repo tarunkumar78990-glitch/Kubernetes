@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: recommendation
+  namespace: ${NAMESPACE}
+  labels:
+    app: recommendation
+    env: ${ENVIRONMENT}
+spec:
+  type: ClusterIP
+  selector:
+    app: recommendation
+  ports:
+  - name: http
+    port: 8080
+    targetPort: http
+    protocol: TCP

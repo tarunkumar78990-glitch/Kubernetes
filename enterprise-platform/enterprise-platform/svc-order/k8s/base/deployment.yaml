@@ -1,0 +1,157 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order
+  namespace: ${NAMESPACE}
+  labels:
+    app: order
+    env: ${ENVIRONMENT}
+    version: "${IMAGE_TAG}"
+    managed-by: jenkins
+  annotations:
+    # Populated by the pipeline so you can trace a running pod back to a commit.
+    platform/git-commit: "${GIT_COMMIT}"
+    platform/build-number: "${BUILD_NUMBER}"
+spec:
+  replicas: ${REPLICAS}
+
+  # RollingUpdate with maxUnavailable=0 means we never dip below capacity
+  # during a deploy. On a 2-node cluster surge is limited to 1 to avoid
+  # exhausting allocatable CPU.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+  revisionHistoryLimit: 5
+  progressDeadlineSeconds: 300
+
+  selector:
+    matchLabels:
+      app: order
+
+  template:
+    metadata:
+      labels:
+        app: order
+        env: ${ENVIRONMENT}
+        version: "${IMAGE_TAG}"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      # Workload Identity: this KSA is bound to a GCP SA, so the pod gets
+      # GCP credentials with no JSON key anywhere.
+      serviceAccountName: order
+
+      # Spread across both nodes. On a 2-node cluster this is what stops
+      # a single node drain from taking the whole service down.
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: order
+
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+
+      # Must exceed the app's own drain sleep (5s) + in-flight requests.
+      terminationGracePeriodSeconds: 40
+
+      containers:
+      - name: order
+        image: ${IMAGE_URL}
+        imagePullPolicy: IfNotPresent
+
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+
+        env:
+        - name: SERVICE_NAME
+          value: "order"
+        - name: APP_ENV
+          value: "${ENVIRONMENT}"
+        - name: APP_VERSION
+          value: "${IMAGE_TAG}"
+        - name: LOG_LEVEL
+          value: "${LOG_LEVEL}"
+        - name: PORT
+          value: "8080"
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: PRODUCT_CATALOG_URL
+          value: "http://product-catalog.${NAMESPACE}.svc.cluster.local:8080"
+
+        resources:
+          requests:
+            cpu: ${CPU_REQUEST}
+            memory: ${MEMORY_REQUEST}
+          limits:
+            # No CPU limit on purpose: CPU is compressible and a limit here
+            # causes throttling that looks like latency. Memory IS limited
+            # because it is not compressible - OOM is better than a node
+            # going down and taking half the cluster with it.
+            memory: ${MEMORY_LIMIT}
+
+        # Liveness: is the process wedged? Restart only then.
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          timeoutSeconds: 3
+          failureThreshold: 3
+
+        # Readiness: should I get traffic right now?
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+          successThreshold: 1
+
+        # Startup: gives slow boots room without loosening liveness.
+        startupProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 12
+
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+
+      volumes:
+      - name: tmp
+        emptyDir: {}

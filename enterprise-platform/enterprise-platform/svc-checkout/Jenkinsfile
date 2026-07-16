@@ -1,0 +1,254 @@
+// Declarative pipeline for svc-checkout
+//
+// NO shared library, per project constraint. That means this file is
+// self-contained and duplicated across 10 repos. Be aware of the real
+// trade-off: a change to the pipeline is now a 10-repo change. In a real
+// org this is exactly the pain that justifies a shared library.
+//
+// Branch -> environment mapping:
+//   develop -> dev       (auto)
+//   staging -> staging   (auto)
+//   main    -> prod      (manual approval + canary)
+
+pipeline {
+    // Never build on the controller. This runs on the dedicated agent VM.
+    agent { label 'linux-docker' }
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '30', artifactNumToKeepStr: '10'))
+        timeout(time: 30, unit: 'MINUTES')
+        timestamps()
+        disableConcurrentBuilds()
+        skipDefaultCheckout(true)
+    }
+
+    // The controller is private, so GitHub webhooks cannot reach it.
+    // Polling is the deliberate trade-off. See Part 5.
+    triggers {
+        pollSCM('H/2 * * * *')
+    }
+
+    environment {
+        SERVICE_NAME   = 'checkout'
+        GCP_PROJECT    = credentials('gcp-project-id')
+        GCP_REGION     = 'asia-south1'
+        AR_REPO        = "${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT}"
+        SONAR_HOST     = credentials('sonarqube-url')
+        IMAGE_TAG      = "${env.BUILD_NUMBER}-${env.GIT_COMMIT_SHORT ?: 'dev'}"
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                checkout scm
+                script {
+                    env.GIT_COMMIT_SHORT = sh(
+                        script: 'git rev-parse --short HEAD',
+                        returnStdout: true
+                    ).trim()
+
+                    // Branch decides the environment. One pipeline, all envs.
+                    switch (env.BRANCH_NAME) {
+                        case 'develop': env.TARGET_ENV = 'dev';     break
+                        case 'staging': env.TARGET_ENV = 'staging'; break
+                        case 'main':    env.TARGET_ENV = 'prod';    break
+                        default:        env.TARGET_ENV = 'none'
+                    }
+
+                    env.IMAGE_TAG = "${env.TARGET_ENV}-${env.BUILD_NUMBER}-${env.GIT_COMMIT_SHORT}"
+                    env.IMAGE_URL = "${env.AR_REPO}/${env.TARGET_ENV}-microservices/svc-${env.SERVICE_NAME}:${env.IMAGE_TAG}"
+
+                    echo "Branch ${env.BRANCH_NAME} -> env ${env.TARGET_ENV}"
+                    echo "Image: ${env.IMAGE_URL}"
+                }
+            }
+        }
+
+        stage('Install') {
+            steps {
+                sh 'npm ci'
+            }
+        }
+
+        stage('Lint') {
+            steps {
+                sh 'npx eslint src/ || true'
+            }
+        }
+
+        stage('Unit tests') {
+            steps {
+                sh 'npm test'
+            }
+            post {
+                always {
+                    // Coverage feeds SonarQube in the next stage.
+                    archiveArtifacts artifacts: 'coverage*/**,coverage.xml',
+                                     allowEmptyArchive: true
+                }
+            }
+        }
+
+        stage('SonarQube scan') {
+            steps {
+                withSonarQubeEnv('sonarqube') {
+                    sh """
+                        sonar-scanner \
+                          -Dsonar.projectKey=svc-${SERVICE_NAME} \
+                          -Dsonar.branch.name=${BRANCH_NAME}
+                    """
+                }
+            }
+        }
+
+        stage('Quality gate') {
+            steps {
+                // THIS is what makes Sonar more than decoration. If the gate
+                // fails, the build stops here and nothing ships.
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+
+        stage('Build image') {
+            when { expression { env.TARGET_ENV != 'none' } }
+            steps {
+                sh """
+                    docker build \
+                      --build-arg BUILD_DATE=\$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
+                      --label org.opencontainers.image.revision=${GIT_COMMIT_SHORT} \
+                      --label org.opencontainers.image.source=${GIT_URL} \
+                      -t ${IMAGE_URL} \
+                      -t ${AR_REPO}/${TARGET_ENV}-microservices/svc-${SERVICE_NAME}:latest \
+                      .
+                """
+            }
+        }
+
+        stage('Trivy scan') {
+            when { expression { env.TARGET_ENV != 'none' } }
+            steps {
+                // Report everything for visibility...
+                sh "trivy image --severity LOW,MEDIUM --exit-code 0 ${IMAGE_URL} || true"
+
+                // ...but HIGH/CRITICAL blocks the build. Shipping a known
+                // critical CVE to prod is not a judgement call.
+                sh "trivy image --severity HIGH,CRITICAL --exit-code 1 --ignore-unfixed ${IMAGE_URL}"
+            }
+        }
+
+        stage('Push to Artifact Registry') {
+            when { expression { env.TARGET_ENV != 'none' } }
+            steps {
+                // The agent VM's own service account has artifactregistry.writer.
+                // No JSON key on disk - that is the point of the per-host SA.
+                sh """
+                    gcloud auth configure-docker ${GCP_REGION}-docker.pkg.dev --quiet
+                    docker push ${IMAGE_URL}
+                    docker push ${AR_REPO}/${TARGET_ENV}-microservices/svc-${SERVICE_NAME}:latest
+                """
+            }
+        }
+
+        stage('Deploy to dev') {
+            when { branch 'develop' }
+            steps {
+                script { deployTo('dev') }
+            }
+        }
+
+        stage('Deploy to staging') {
+            when { branch 'staging' }
+            steps {
+                script { deployTo('staging') }
+            }
+        }
+
+        stage('Approve production release') {
+            when { branch 'main' }
+            steps {
+                // A human gate before prod. Times out rather than pinning
+                // an executor forever.
+                timeout(time: 60, unit: 'MINUTES') {
+                    input message: "Deploy svc-${SERVICE_NAME}:${IMAGE_TAG} to PRODUCTION?",
+                          ok: 'Deploy',
+                          submitterParameter: 'approver'
+                }
+            }
+        }
+
+        stage('Deploy to prod (canary)') {
+            when { branch 'main' }
+            steps {
+                script {
+                    sh """
+                        gcloud container clusters get-credentials prod-gke \
+                          --region ${GCP_REGION} --project ${GCP_PROJECT}
+                    """
+                    // Canary first: 25% of pods on the new version, bake,
+                    // check error rate, promote or abort automatically.
+                    sh """
+                        export IMAGE_URL=${IMAGE_URL}
+                        export IMAGE_TAG=${IMAGE_TAG}
+                        export PROJECT_ID=${GCP_PROJECT}
+                        export GIT_COMMIT=${GIT_COMMIT_SHORT}
+                        export BUILD_NUMBER=${BUILD_NUMBER}
+                        ./scripts/deploy.sh prod
+                    """
+                }
+            }
+        }
+
+        stage('Smoke test') {
+            when { expression { env.TARGET_ENV != 'none' } }
+            steps {
+                // The namespace enforces Pod Security Admission 'restricted'.
+                // A bare `kubectl run` sets no securityContext, so the API
+                // server rejects the pod outright. These overrides are what
+                // make it admissible.
+                sh """
+                    OVERRIDES='{"spec":{"securityContext":{"runAsNonRoot":true,"runAsUser":1000,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"smoke","image":"curlimages/curl:8.9.1","securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true},"command":["curl","-sf","--max-time","10","http://${SERVICE_NAME}.${TARGET_ENV}.svc.cluster.local:8080/readyz"]}]}}'
+                    kubectl run smoke-${SERVICE_NAME}-${BUILD_NUMBER} \
+                      --namespace=${TARGET_ENV} \
+                      --image=curlimages/curl:8.9.1 \
+                      --restart=Never --rm -i --quiet \
+                      --overrides="\${OVERRIDES}"
+                """
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "svc-${SERVICE_NAME} ${IMAGE_TAG} deployed to ${TARGET_ENV}"
+        }
+        failure {
+            echo "Build failed for svc-${SERVICE_NAME} on ${BRANCH_NAME}"
+            // Wire Slack/PagerDuty here in a real setup.
+        }
+        always {
+            // Docker layers fill the agent disk within days otherwise.
+            sh 'docker image prune -f --filter "until=72h" || true'
+            cleanWs()
+        }
+    }
+}
+
+// ---- helper: no shared library, so it lives here ----
+def deployTo(String envName) {
+    sh """
+        gcloud container clusters get-credentials ${envName}-gke \
+          --region ${env.GCP_REGION} --project ${env.GCP_PROJECT}
+    """
+    withEnv([
+        "IMAGE_URL=${env.IMAGE_URL}",
+        "IMAGE_TAG=${env.IMAGE_TAG}",
+        "PROJECT_ID=${env.GCP_PROJECT}",
+        "GIT_COMMIT=${env.GIT_COMMIT_SHORT}",
+        "BUILD_NUMBER=${env.BUILD_NUMBER}"
+    ]) {
+        sh './scripts/deploy.sh ' + envName
+    }
+}

@@ -1,0 +1,615 @@
+# Multi-window, multi-burn-rate alerts - PLAIN Prometheus format.
+#
+# Four alerts per service:
+#   fast burn (14.4x, 5m AND 1h) -> page. Budget gone in ~2 days.
+#   slow burn (6x, 30m AND 6h)   -> ticket. Real but not urgent.
+#   latency SLO                  -> ticket.
+#   budget exhausted             -> page + freeze releases.
+#
+# The `and` between two windows is the important part. The short window makes
+# the alert fast; the long window stops a 30-second blip from paging you.
+# Either window alone forces a choice between slow alerts and a noisy pager.
+groups:
+- name: slo_burn_rate
+  interval: 30s
+  rules:
+  - alert: FrontendErrorBudgetFastBurn
+    expr: |
+      (
+        (1 - slo:frontend:success_ratio5m) > (0.0144)
+        and
+        (1 - slo:frontend:success_ratio1h) > (0.0144)
+      )
+    for: 2m
+    labels:
+      severity: critical
+      service: frontend
+      tier: '1'
+      slo: availability
+    annotations:
+      summary: frontend is burning error budget 14.4x too fast
+      description: frontend is returning 5xx well above target. At this rate the 30-day budget is exhausted
+        in about 2 days.
+      runbook_url: https://github.com/YOUR_ORG/platform-ops/blob/main/runbooks/frontend.md
+  - alert: FrontendErrorBudgetSlowBurn
+    expr: |
+      (
+        (1 - slo:frontend:success_ratio30m) > (0.006)
+        and
+        (1 - slo:frontend:success_ratio6h) > (0.006)
+      )
+    for: 15m
+    labels:
+      severity: warning
+      service: frontend
+      tier: '1'
+      slo: availability
+    annotations:
+      summary: frontend is burning error budget 6x too fast
+      description: Real but not urgent. Ticket, do not page.
+      runbook_url: https://github.com/YOUR_ORG/platform-ops/blob/main/runbooks/frontend.md
+  - alert: FrontendLatencySLOBreach
+    expr: |
+      slo:frontend:latency_good_ratio1h < 0.999
+    for: 10m
+    labels:
+      severity: warning
+      service: frontend
+      slo: latency
+    annotations:
+      summary: frontend latency SLO breached (500ms)
+      description: Fewer than 99.9% of requests completed within 500ms over the last hour.
+      runbook_url: https://github.com/YOUR_ORG/platform-ops/blob/main/runbooks/frontend.md
+  - alert: FrontendErrorBudgetExhausted
+    expr: |
+      slo:frontend:error_budget_remaining <= 0
+    for: 5m
+    labels:
+      severity: critical
+      service: frontend
+      tier: '1'
+    annotations:
+      summary: frontend has exhausted its 30-day error budget
+      description: Freeze feature releases for frontend and spend the next cycle on reliability work.
+        This is the error budget policy doing its job.
+      runbook_url: https://github.com/YOUR_ORG/platform-ops/blob/main/runbooks/frontend.md
+  - alert: CheckoutErrorBudgetFastBurn
+    expr: |
+      (
+        (1 - slo:checkout:success_ratio5m) > (0.0072)
+        and
+        (1 - slo:checkout:success_ratio1h) > (0.0072)
+      )
+    for: 2m
+    labels:
+      severity: critical
+      service: checkout
+      tier: '1'
+      slo: availability
+    annotations:
+      summary: checkout is burning error budget 14.4x too fast
+      description: checkout is returning 5xx well above target. At this rate the 30-day budget is exhausted
+        in about 2 days.
+      runbook_url: https://github.com/YOUR_ORG/platform-ops/blob/main/runbooks/checkout.md
+  - alert: CheckoutErrorBudgetSlowBurn
+    expr: |
+      (
+        (1 - slo:checkout:success_ratio30m) > (0.003)
+        and
+        (1 - slo:checkout:success_ratio6h) > (0.003)
+      )
+    for: 15m
+    labels:
+      severity: warning
+      service: checkout
+      tier: '1'
+      slo: availability
+    annotations:
+      summary: checkout is burning error budget 6x too fast
+      description: Real but not urgent. Ticket, do not page.
+      runbook_url: https://github.com/YOUR_ORG/platform-ops/blob/main/runbooks/checkout.md
+  - alert: CheckoutLatencySLOBreach
+    expr: |
+      slo:checkout:latency_good_ratio1h < 0.9995
+    for: 10m
+    labels:
+      severity: warning
+      service: checkout
+      slo: latency
+    annotations:
+      summary: checkout latency SLO breached (800ms)
+      description: Fewer than 99.95% of requests completed within 800ms over the last hour.
+      runbook_url: https://github.com/YOUR_ORG/platform-ops/blob/main/runbooks/checkout.md
+  - alert: CheckoutErrorBudgetExhausted
+    expr: |
+      slo:checkout:error_budget_remaining <= 0
+    for: 5m
+    labels:
+      severity: critical
+      service: checkout
+      tier: '1'
+    annotations:
+      summary: checkout has exhausted its 30-day error budget
+      description: Freeze feature releases for checkout and spend the next cycle on reliability work.
+        This is the error budget policy doing its job.
+      runbook_url: https://github.com/YOUR_ORG/platform-ops/blob/main/runbooks/checkout.md
+  - alert: PaymentErrorBudgetFastBurn
+    expr: |
+      (
+        (1 - slo:payment:success_ratio5m) > (0.0072)
+        and
+        (1 - slo:payment:success_ratio1h) > (0.0072)
+      )
+    for: 2m
+    labels:
+      severity: critical
+      service: payment
+      tier: '1'
+      slo: availability
+    annotations:
+      summary: payment is burning error budget 14.4x too fast
+      description: payment is returning 5xx well above target. At this rate the 30-day budget is exhausted
+        in about 2 days.
+      runbook_url: https://github.com/YOUR_ORG/platform-ops/blob/main/runbooks/payment.md
+  - alert: PaymentErrorBudgetSlowBurn
+    expr: |
+      (
+        (1 - slo:payment:success_ratio30m) > (0.003)
+        and
+        (1 - slo:payment:success_ratio6h) > (0.003)
+      )
+    for: 15m
+    labels:
+      severity: warning
+      service: payment
+      tier: '1'
+      slo: availability
+    annotations:
+      summary: payment is burning error budget 6x too fast
+      description: Real but not urgent. Ticket, do not page.
+      runbook_url: https://github.com/YOUR_ORG/platform-ops/blob/main/runbooks/payment.md
+  - alert: PaymentLatencySLOBreach
+    expr: |
+      slo:payment:latency_good_ratio1h < 0.9995
+    for: 10m
+    labels:
+      severity: warning
+      service: payment
+      slo: latency
+    annotations:
+      summary: payment latency SLO breached (500ms)
+      description: Fewer than 99.95% of requests completed within 500ms over the last hour.
+      runbook_url: https://github.com/YOUR_ORG/platform-ops/blob/main/runbooks/payment.md
+  - alert: PaymentErrorBudgetExhausted
+    expr: |
+      slo:payment:error_budget_remaining <= 0
+    for: 5m
+    labels:
+      severity: critical
+      service: payment
+      tier: '1'
+    annotations:
+      summary: payment has exhausted its 30-day error budget
+      description: Freeze feature releases for payment and spend the next cycle on reliability work. This
+        is the error budget policy doing its job.
+      runbook_url: https://github.com/YOUR_ORG/platform-ops/blob/main/runbooks/payment.md
+  - alert: OrderErrorBudgetFastBurn
+    expr: |
+      (
+        (1 - slo:order:success_ratio5m) > (0.0144)
+        and
+        (1 - slo:order:success_ratio1h) > (0.0144)
+      )
+    for: 2m
+    labels:
+      severity: critical
+      service: order
+      tier: '1'
+      slo: availability
+    annotations:
+      summary: order is burning error budget 14.4x too fast
+      description: order is returning 5xx well above target. At this rate the 30-day budget is exhausted
+        in about 2 days.
+      runbook_url: https://github.com/YOUR_ORG/platform-ops/blob/main/runbooks/order.md
+  - alert: OrderErrorBudgetSlowBurn
+    expr: |
+      (
+        (1 - slo:order:success_ratio30m) > (0.006)
+        and
+        (1 - slo:order:success_ratio6h) > (0.006)
+      )
+    for: 15m
+    labels:
+      severity: warning
+      service: order
+      tier: '1'
+      slo: availability
+    annotations:
+      summary: order is burning error budget 6x too fast
+      description: Real but not urgent. Ticket, do not page.
+      runbook_url: https://github.com/YOUR_ORG/platform-ops/blob/main/runbooks/order.md
+  - alert: OrderLatencySLOBreach
+    expr: |
+      slo:order:latency_good_ratio1h < 0.999
+    for: 10m
+    labels:
+      severity: warning
+      service: order
+      slo: latency
+    annotations:
+      summary: order latency SLO breached (400ms)
+      description: Fewer than 99.9% of requests completed within 400ms over the last hour.
+      runbook_url: https://github.com/YOUR_ORG/platform-ops/blob/main/runbooks/order.md
+  - alert: OrderErrorBudgetExhausted
+    expr: |
+      slo:order:error_budget_remaining <= 0
+    for: 5m
+    labels:
+      severity: critical
+      service: order
+      tier: '1'
+    annotations:
+      summary: order has exhausted its 30-day error budget
+      description: Freeze feature releases for order and spend the next cycle on reliability work. This
+        is the error budget policy doing its job.
+      runbook_url: https://github.com/YOUR_ORG/platform-ops/blob/main/runbooks/order.md
+  - alert: UserAuthErrorBudgetFastBurn
+    expr: |
+      (
+        (1 - slo:user_auth:success_ratio5m) > (0.0072)
+        and
+        (1 - slo:user_auth:success_ratio1h) > (0.0072)
+      )
+    for: 2m
+    labels:
+      severity: critical
+      service: user-auth
+      tier: '1'
+      slo: availability
+    annotations:
+      summary: user-auth is burning error budget 14.4x too fast
+      description: user-auth is returning 5xx well above target. At this rate the 30-day budget is exhausted
+        in about 2 days.
+      runbook_url: https://github.com/YOUR_ORG/platform-ops/blob/main/runbooks/user-auth.md
+  - alert: UserAuthErrorBudgetSlowBurn
+    expr: |
+      (
+        (1 - slo:user_auth:success_ratio30m) > (0.003)
+        and
+        (1 - slo:user_auth:success_ratio6h) > (0.003)
+      )
+    for: 15m
+    labels:
+      severity: warning
+      service: user-auth
+      tier: '1'
+      slo: availability
+    annotations:
+      summary: user-auth is burning error budget 6x too fast
+      description: Real but not urgent. Ticket, do not page.
+      runbook_url: https://github.com/YOUR_ORG/platform-ops/blob/main/runbooks/user-auth.md
+  - alert: UserAuthLatencySLOBreach
+    expr: |
+      slo:user_auth:latency_good_ratio1h < 0.9995
+    for: 10m
+    labels:
+      severity: warning
+      service: user-auth
+      slo: latency
+    annotations:
+      summary: user-auth latency SLO breached (400ms)
+      description: Fewer than 99.95% of requests completed within 400ms over the last hour.
+      runbook_url: https://github.com/YOUR_ORG/platform-ops/blob/main/runbooks/user-auth.md
+  - alert: UserAuthErrorBudgetExhausted
+    expr: |
+      slo:user_auth:error_budget_remaining <= 0
+    for: 5m
+    labels:
+      severity: critical
+      service: user-auth
+      tier: '1'
+    annotations:
+      summary: user-auth has exhausted its 30-day error budget
+      description: Freeze feature releases for user-auth and spend the next cycle on reliability work.
+        This is the error budget policy doing its job.
+      runbook_url: https://github.com/YOUR_ORG/platform-ops/blob/main/runbooks/user-auth.md
+  - alert: CartErrorBudgetFastBurn
+    expr: |
+      (
+        (1 - slo:cart:success_ratio5m) > (0.0144)
+        and
+        (1 - slo:cart:success_ratio1h) > (0.0144)
+      )
+    for: 2m
+    labels:
+      severity: warning
+      service: cart
+      tier: '2'
+      slo: availability
+    annotations:
+      summary: cart is burning error budget 14.4x too fast
+      description: cart is returning 5xx well above target. At this rate the 30-day budget is exhausted
+        in about 2 days.
+      runbook_url: https://github.com/YOUR_ORG/platform-ops/blob/main/runbooks/cart.md
+  - alert: CartErrorBudgetSlowBurn
+    expr: |
+      (
+        (1 - slo:cart:success_ratio30m) > (0.006)
+        and
+        (1 - slo:cart:success_ratio6h) > (0.006)
+      )
+    for: 15m
+    labels:
+      severity: warning
+      service: cart
+      tier: '2'
+      slo: availability
+    annotations:
+      summary: cart is burning error budget 6x too fast
+      description: Real but not urgent. Ticket, do not page.
+      runbook_url: https://github.com/YOUR_ORG/platform-ops/blob/main/runbooks/cart.md
+  - alert: CartLatencySLOBreach
+    expr: |
+      slo:cart:latency_good_ratio1h < 0.999
+    for: 10m
+    labels:
+      severity: warning
+      service: cart
+      slo: latency
+    annotations:
+      summary: cart latency SLO breached (300ms)
+      description: Fewer than 99.9% of requests completed within 300ms over the last hour.
+      runbook_url: https://github.com/YOUR_ORG/platform-ops/blob/main/runbooks/cart.md
+  - alert: CartErrorBudgetExhausted
+    expr: |
+      slo:cart:error_budget_remaining <= 0
+    for: 5m
+    labels:
+      severity: warning
+      service: cart
+      tier: '2'
+    annotations:
+      summary: cart has exhausted its 30-day error budget
+      description: Freeze feature releases for cart and spend the next cycle on reliability work. This
+        is the error budget policy doing its job.
+      runbook_url: https://github.com/YOUR_ORG/platform-ops/blob/main/runbooks/cart.md
+  - alert: ProductCatalogErrorBudgetFastBurn
+    expr: |
+      (
+        (1 - slo:product_catalog:success_ratio5m) > (0.0144)
+        and
+        (1 - slo:product_catalog:success_ratio1h) > (0.0144)
+      )
+    for: 2m
+    labels:
+      severity: warning
+      service: product-catalog
+      tier: '2'
+      slo: availability
+    annotations:
+      summary: product-catalog is burning error budget 14.4x too fast
+      description: product-catalog is returning 5xx well above target. At this rate the 30-day budget
+        is exhausted in about 2 days.
+      runbook_url: https://github.com/YOUR_ORG/platform-ops/blob/main/runbooks/product-catalog.md
+  - alert: ProductCatalogErrorBudgetSlowBurn
+    expr: |
+      (
+        (1 - slo:product_catalog:success_ratio30m) > (0.006)
+        and
+        (1 - slo:product_catalog:success_ratio6h) > (0.006)
+      )
+    for: 15m
+    labels:
+      severity: warning
+      service: product-catalog
+      tier: '2'
+      slo: availability
+    annotations:
+      summary: product-catalog is burning error budget 6x too fast
+      description: Real but not urgent. Ticket, do not page.
+      runbook_url: https://github.com/YOUR_ORG/platform-ops/blob/main/runbooks/product-catalog.md
+  - alert: ProductCatalogLatencySLOBreach
+    expr: |
+      slo:product_catalog:latency_good_ratio1h < 0.999
+    for: 10m
+    labels:
+      severity: warning
+      service: product-catalog
+      slo: latency
+    annotations:
+      summary: product-catalog latency SLO breached (300ms)
+      description: Fewer than 99.9% of requests completed within 300ms over the last hour.
+      runbook_url: https://github.com/YOUR_ORG/platform-ops/blob/main/runbooks/product-catalog.md
+  - alert: ProductCatalogErrorBudgetExhausted
+    expr: |
+      slo:product_catalog:error_budget_remaining <= 0
+    for: 5m
+    labels:
+      severity: warning
+      service: product-catalog
+      tier: '2'
+    annotations:
+      summary: product-catalog has exhausted its 30-day error budget
+      description: Freeze feature releases for product-catalog and spend the next cycle on reliability
+        work. This is the error budget policy doing its job.
+      runbook_url: https://github.com/YOUR_ORG/platform-ops/blob/main/runbooks/product-catalog.md
+  - alert: ShippingErrorBudgetFastBurn
+    expr: |
+      (
+        (1 - slo:shipping:success_ratio5m) > (0.072)
+        and
+        (1 - slo:shipping:success_ratio1h) > (0.072)
+      )
+    for: 2m
+    labels:
+      severity: warning
+      service: shipping
+      tier: '2'
+      slo: availability
+    annotations:
+      summary: shipping is burning error budget 14.4x too fast
+      description: shipping is returning 5xx well above target. At this rate the 30-day budget is exhausted
+        in about 2 days.
+      runbook_url: https://github.com/YOUR_ORG/platform-ops/blob/main/runbooks/shipping.md
+  - alert: ShippingErrorBudgetSlowBurn
+    expr: |
+      (
+        (1 - slo:shipping:success_ratio30m) > (0.03)
+        and
+        (1 - slo:shipping:success_ratio6h) > (0.03)
+      )
+    for: 15m
+    labels:
+      severity: warning
+      service: shipping
+      tier: '2'
+      slo: availability
+    annotations:
+      summary: shipping is burning error budget 6x too fast
+      description: Real but not urgent. Ticket, do not page.
+      runbook_url: https://github.com/YOUR_ORG/platform-ops/blob/main/runbooks/shipping.md
+  - alert: ShippingLatencySLOBreach
+    expr: |
+      slo:shipping:latency_good_ratio1h < 0.995
+    for: 10m
+    labels:
+      severity: warning
+      service: shipping
+      slo: latency
+    annotations:
+      summary: shipping latency SLO breached (500ms)
+      description: Fewer than 99.5% of requests completed within 500ms over the last hour.
+      runbook_url: https://github.com/YOUR_ORG/platform-ops/blob/main/runbooks/shipping.md
+  - alert: ShippingErrorBudgetExhausted
+    expr: |
+      slo:shipping:error_budget_remaining <= 0
+    for: 5m
+    labels:
+      severity: warning
+      service: shipping
+      tier: '2'
+    annotations:
+      summary: shipping has exhausted its 30-day error budget
+      description: Freeze feature releases for shipping and spend the next cycle on reliability work.
+        This is the error budget policy doing its job.
+      runbook_url: https://github.com/YOUR_ORG/platform-ops/blob/main/runbooks/shipping.md
+  - alert: NotificationErrorBudgetFastBurn
+    expr: |
+      (
+        (1 - slo:notification:success_ratio5m) > (0.144)
+        and
+        (1 - slo:notification:success_ratio1h) > (0.144)
+      )
+    for: 2m
+    labels:
+      severity: warning
+      service: notification
+      tier: '3'
+      slo: availability
+    annotations:
+      summary: notification is burning error budget 14.4x too fast
+      description: notification is returning 5xx well above target. At this rate the 30-day budget is
+        exhausted in about 2 days.
+      runbook_url: https://github.com/YOUR_ORG/platform-ops/blob/main/runbooks/notification.md
+  - alert: NotificationErrorBudgetSlowBurn
+    expr: |
+      (
+        (1 - slo:notification:success_ratio30m) > (0.06)
+        and
+        (1 - slo:notification:success_ratio6h) > (0.06)
+      )
+    for: 15m
+    labels:
+      severity: warning
+      service: notification
+      tier: '3'
+      slo: availability
+    annotations:
+      summary: notification is burning error budget 6x too fast
+      description: Real but not urgent. Ticket, do not page.
+      runbook_url: https://github.com/YOUR_ORG/platform-ops/blob/main/runbooks/notification.md
+  - alert: NotificationLatencySLOBreach
+    expr: |
+      slo:notification:latency_good_ratio1h < 0.99
+    for: 10m
+    labels:
+      severity: warning
+      service: notification
+      slo: latency
+    annotations:
+      summary: notification latency SLO breached (1000ms)
+      description: Fewer than 99.0% of requests completed within 1000ms over the last hour.
+      runbook_url: https://github.com/YOUR_ORG/platform-ops/blob/main/runbooks/notification.md
+  - alert: NotificationErrorBudgetExhausted
+    expr: |
+      slo:notification:error_budget_remaining <= 0
+    for: 5m
+    labels:
+      severity: warning
+      service: notification
+      tier: '3'
+    annotations:
+      summary: notification has exhausted its 30-day error budget
+      description: Freeze feature releases for notification and spend the next cycle on reliability work.
+        This is the error budget policy doing its job.
+      runbook_url: https://github.com/YOUR_ORG/platform-ops/blob/main/runbooks/notification.md
+  - alert: RecommendationErrorBudgetFastBurn
+    expr: |
+      (
+        (1 - slo:recommendation:success_ratio5m) > (0.144)
+        and
+        (1 - slo:recommendation:success_ratio1h) > (0.144)
+      )
+    for: 2m
+    labels:
+      severity: warning
+      service: recommendation
+      tier: '3'
+      slo: availability
+    annotations:
+      summary: recommendation is burning error budget 14.4x too fast
+      description: recommendation is returning 5xx well above target. At this rate the 30-day budget is
+        exhausted in about 2 days.
+      runbook_url: https://github.com/YOUR_ORG/platform-ops/blob/main/runbooks/recommendation.md
+  - alert: RecommendationErrorBudgetSlowBurn
+    expr: |
+      (
+        (1 - slo:recommendation:success_ratio30m) > (0.06)
+        and
+        (1 - slo:recommendation:success_ratio6h) > (0.06)
+      )
+    for: 15m
+    labels:
+      severity: warning
+      service: recommendation
+      tier: '3'
+      slo: availability
+    annotations:
+      summary: recommendation is burning error budget 6x too fast
+      description: Real but not urgent. Ticket, do not page.
+      runbook_url: https://github.com/YOUR_ORG/platform-ops/blob/main/runbooks/recommendation.md
+  - alert: RecommendationLatencySLOBreach
+    expr: |
+      slo:recommendation:latency_good_ratio1h < 0.99
+    for: 10m
+    labels:
+      severity: warning
+      service: recommendation
+      slo: latency
+    annotations:
+      summary: recommendation latency SLO breached (400ms)
+      description: Fewer than 99.0% of requests completed within 400ms over the last hour.
+      runbook_url: https://github.com/YOUR_ORG/platform-ops/blob/main/runbooks/recommendation.md
+  - alert: RecommendationErrorBudgetExhausted
+    expr: |
+      slo:recommendation:error_budget_remaining <= 0
+    for: 5m
+    labels:
+      severity: warning
+      service: recommendation
+      tier: '3'
+    annotations:
+      summary: recommendation has exhausted its 30-day error budget
+      description: Freeze feature releases for recommendation and spend the next cycle on reliability
+        work. This is the error budget policy doing its job.
+      runbook_url: https://github.com/YOUR_ORG/platform-ops/blob/main/runbooks/recommendation.md

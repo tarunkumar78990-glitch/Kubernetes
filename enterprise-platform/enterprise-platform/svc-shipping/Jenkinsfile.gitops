@@ -1,0 +1,232 @@
+// Declarative pipeline for svc-shipping
+//
+// NO shared library, per project constraint. That means this file is
+// self-contained and duplicated across 10 repos. Be aware of the real
+// trade-off: a change to the pipeline is now a 10-repo change. In a real
+// org this is exactly the pain that justifies a shared library.
+//
+// Branch -> environment mapping:
+//   develop -> dev       (auto)
+//   staging -> staging   (auto)
+//   main    -> prod      (manual approval + canary)
+
+pipeline {
+    // Never build on the controller. This runs on the dedicated agent VM.
+    agent { label 'linux-docker' }
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '30', artifactNumToKeepStr: '10'))
+        timeout(time: 30, unit: 'MINUTES')
+        timestamps()
+        disableConcurrentBuilds()
+        skipDefaultCheckout(true)
+    }
+
+    // The controller is private, so GitHub webhooks cannot reach it.
+    // Polling is the deliberate trade-off. See Part 5.
+    triggers {
+        pollSCM('H/2 * * * *')
+    }
+
+    environment {
+        SERVICE_NAME   = 'shipping'
+        GCP_PROJECT    = credentials('gcp-project-id')
+        GCP_REGION     = 'asia-south1'
+        AR_REPO        = "${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT}"
+        SONAR_HOST     = credentials('sonarqube-url')
+        GITOPS_REPO_URL = 'github.com/YOUR_ORG/platform-gitops.git'
+        IMAGE_TAG      = "${env.BUILD_NUMBER}-${env.GIT_COMMIT_SHORT ?: 'dev'}"
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                checkout scm
+                script {
+                    env.GIT_COMMIT_SHORT = sh(
+                        script: 'git rev-parse --short HEAD',
+                        returnStdout: true
+                    ).trim()
+
+                    // Branch decides the environment. One pipeline, all envs.
+                    switch (env.BRANCH_NAME) {
+                        case 'develop': env.TARGET_ENV = 'dev';     break
+                        case 'staging': env.TARGET_ENV = 'staging'; break
+                        case 'main':    env.TARGET_ENV = 'prod';    break
+                        default:        env.TARGET_ENV = 'none'
+                    }
+
+                    env.IMAGE_TAG = "${env.TARGET_ENV}-${env.BUILD_NUMBER}-${env.GIT_COMMIT_SHORT}"
+                    env.IMAGE_URL = "${env.AR_REPO}/${env.TARGET_ENV}-microservices/svc-${env.SERVICE_NAME}:${env.IMAGE_TAG}"
+
+                    echo "Branch ${env.BRANCH_NAME} -> env ${env.TARGET_ENV}"
+                    echo "Image: ${env.IMAGE_URL}"
+                }
+            }
+        }
+
+        stage('Install') {
+            steps {
+                sh '''
+                    python3 -m venv .venv
+                    . .venv/bin/activate
+                    pip install --quiet -r requirements-dev.txt
+                '''
+            }
+        }
+
+        stage('Lint') {
+            steps {
+                sh '''
+                    . .venv/bin/activate
+                    flake8 src/ --max-line-length=100 || true
+                '''
+            }
+        }
+
+        stage('Unit tests') {
+            steps {
+                sh '''
+                    . .venv/bin/activate
+                    pytest
+                '''
+            }
+            post {
+                always {
+                    // Coverage feeds SonarQube in the next stage.
+                    archiveArtifacts artifacts: 'coverage*/**,coverage.xml',
+                                     allowEmptyArchive: true
+                }
+            }
+        }
+
+        stage('SonarQube scan') {
+            steps {
+                withSonarQubeEnv('sonarqube') {
+                    sh """
+                        sonar-scanner \
+                          -Dsonar.projectKey=svc-${SERVICE_NAME} \
+                          -Dsonar.branch.name=${BRANCH_NAME}
+                    """
+                }
+            }
+        }
+
+        stage('Quality gate') {
+            steps {
+                // THIS is what makes Sonar more than decoration. If the gate
+                // fails, the build stops here and nothing ships.
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+
+        stage('Build image') {
+            when { expression { env.TARGET_ENV != 'none' } }
+            steps {
+                sh """
+                    docker build \
+                      --build-arg BUILD_DATE=\$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
+                      --label org.opencontainers.image.revision=${GIT_COMMIT_SHORT} \
+                      --label org.opencontainers.image.source=${GIT_URL} \
+                      -t ${IMAGE_URL} \
+                      -t ${AR_REPO}/${TARGET_ENV}-microservices/svc-${SERVICE_NAME}:latest \
+                      .
+                """
+            }
+        }
+
+        stage('Trivy scan') {
+            when { expression { env.TARGET_ENV != 'none' } }
+            steps {
+                // Report everything for visibility...
+                sh "trivy image --severity LOW,MEDIUM --exit-code 0 ${IMAGE_URL} || true"
+
+                // ...but HIGH/CRITICAL blocks the build. Shipping a known
+                // critical CVE to prod is not a judgement call.
+                sh "trivy image --severity HIGH,CRITICAL --exit-code 1 --ignore-unfixed ${IMAGE_URL}"
+            }
+        }
+
+        stage('Push to Artifact Registry') {
+            when { expression { env.TARGET_ENV != 'none' } }
+            steps {
+                // The agent VM's own service account has artifactregistry.writer.
+                // No JSON key on disk - that is the point of the per-host SA.
+                sh """
+                    gcloud auth configure-docker ${GCP_REGION}-docker.pkg.dev --quiet
+                    docker push ${IMAGE_URL}
+                    docker push ${AR_REPO}/${TARGET_ENV}-microservices/svc-${SERVICE_NAME}:latest
+                """
+            }
+        }
+
+        // ---------------- CD: GitOps ----------------
+        // Jenkins no longer deploys. It renders manifests and commits them to
+        // the platform-gitops repo. Argo CD pulls and applies.
+        //
+        // Consequence worth noticing: this pipeline has NO cluster credentials
+        // any more. The Jenkins agent's roles/container.developer can be
+        // revoked. CI is no longer a path into production.
+        stage('Render and commit manifests') {
+            when { expression { env.TARGET_ENV != 'none' } }
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'github-pat',
+                    usernameVariable: 'GIT_USER',
+                    passwordVariable: 'GIT_TOKEN'
+                )]) {
+                    sh '''
+                        export SERVICE_NAME="${SERVICE_NAME}"
+                        export IMAGE_URL="${IMAGE_URL}"
+                        export IMAGE_TAG="${IMAGE_TAG}"
+                        export PROJECT_ID="${GCP_PROJECT}"
+                        export GIT_COMMIT="${GIT_COMMIT_SHORT}"
+                        export BUILD_NUMBER="${BUILD_NUMBER}"
+                        export GITOPS_REPO="${GITOPS_REPO_URL}"
+                        export GITOPS_CREDS="${GIT_USER}:${GIT_TOKEN}"
+                        ./scripts/render-and-commit.sh ${TARGET_ENV}
+                    '''
+                }
+            }
+        }
+
+        // Prod is NOT synced by this pipeline. Argo CD shows prod OutOfSync
+        // and waits for a human to click Sync in the Argo UI. That button is
+        // the approval gate now - and the diff being approved is the actual
+        // rendered YAML, not a build number.
+        stage('Production sync notice') {
+            when { branch 'main' }
+            steps {
+                echo """
+                    Manifests for PRODUCTION have been committed to GitOps.
+                    Argo CD will show prod-${SERVICE_NAME} as OutOfSync.
+
+                    A human must review the diff and sync:
+                      argocd app diff prod-${SERVICE_NAME}
+                      argocd app sync prod-${SERVICE_NAME}
+
+                    Or click Sync in the Argo CD UI.
+                """
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "svc-${SERVICE_NAME} ${IMAGE_TAG} deployed to ${TARGET_ENV}"
+        }
+        failure {
+            echo "Build failed for svc-${SERVICE_NAME} on ${BRANCH_NAME}"
+            // Wire Slack/PagerDuty here in a real setup.
+        }
+        always {
+            // Docker layers fill the agent disk within days otherwise.
+            sh 'docker image prune -f --filter "until=72h" || true'
+            cleanWs()
+        }
+    }
+}
+

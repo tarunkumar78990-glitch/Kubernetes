@@ -1,0 +1,97 @@
+# Default-deny is applied at the namespace level (platform-ops).
+# This policy opens only the paths this service genuinely needs.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: checkout
+  namespace: ${NAMESPACE}
+  labels:
+    app: checkout
+spec:
+  podSelector:
+    matchLabels:
+      app: checkout
+
+  policyTypes:
+  - Ingress
+  - Egress
+
+  ingress:
+  # Only these services may call me. Everything else is denied.
+  - from:
+      - podSelector:
+          matchLabels:
+            app: frontend
+    ports:
+    - protocol: TCP
+      port: 8080
+
+  # Prometheus scraping
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    ports:
+    - protocol: TCP
+      port: 8080
+
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: cart
+    ports:
+    - protocol: TCP
+      port: 8080
+  - to:
+    - podSelector:
+        matchLabels:
+          app: payment
+    ports:
+    - protocol: TCP
+      port: 8080
+  - to:
+    - podSelector:
+        matchLabels:
+          app: shipping
+    ports:
+    - protocol: TCP
+      port: 8080
+  - to:
+    - podSelector:
+        matchLabels:
+          app: order
+    ports:
+    - protocol: TCP
+      port: 8080
+  - to:
+    - podSelector:
+        matchLabels:
+          app: notification
+    ports:
+    - protocol: TCP
+      port: 8080
+  # DNS - without this every outbound call fails in a way that looks
+  # like a random timeout. The single most common NetworkPolicy mistake.
+  - to:
+    - namespaceSelector: {}
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+
+  # GCP APIs (Secret Manager, logging) over HTTPS
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+    ports:
+    - protocol: TCP
+      port: 443

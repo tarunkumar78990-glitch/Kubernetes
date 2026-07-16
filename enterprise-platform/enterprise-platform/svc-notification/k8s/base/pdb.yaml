@@ -1,0 +1,15 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: notification
+  namespace: ${NAMESPACE}
+  labels:
+    app: notification
+spec:
+  # Voluntary disruptions only (node upgrades, drains). Set to 0 in dev
+  # via the env file, since single-replica dev deployments would otherwise
+  # block node maintenance forever.
+  minAvailable: ${PDB_MIN_AVAILABLE}
+  selector:
+    matchLabels:
+      app: notification

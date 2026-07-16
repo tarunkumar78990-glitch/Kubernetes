@@ -1,0 +1,110 @@
+# Quotas matter more here than usual: all three environments share ONE
+# 2-node cluster. Without a quota, a runaway dev HPA can starve prod.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: dev-quota
+  namespace: dev
+spec:
+  hard:
+    requests.cpu: "2"
+    requests.memory: 4Gi
+    limits.memory: 8Gi
+    pods: "30"
+    count/deployments.apps: "20"
+    services: "20"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: dev-limits
+  namespace: dev
+spec:
+  limits:
+  - type: Container
+    # Anything deployed without explicit resources gets these, so an
+    # un-reviewed manifest can't request a whole node.
+    default:
+      memory: 256Mi
+    defaultRequest:
+      cpu: 50m
+      memory: 96Mi
+    max:
+      memory: 1Gi
+    min:
+      cpu: 10m
+      memory: 32Mi
+---
+# Quotas matter more here than usual: all three environments share ONE
+# 2-node cluster. Without a quota, a runaway dev HPA can starve prod.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: staging-quota
+  namespace: staging
+spec:
+  hard:
+    requests.cpu: "3"
+    requests.memory: 6Gi
+    limits.memory: 12Gi
+    pods: "40"
+    count/deployments.apps: "20"
+    services: "20"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: staging-limits
+  namespace: staging
+spec:
+  limits:
+  - type: Container
+    # Anything deployed without explicit resources gets these, so an
+    # un-reviewed manifest can't request a whole node.
+    default:
+      memory: 256Mi
+    defaultRequest:
+      cpu: 50m
+      memory: 96Mi
+    max:
+      memory: 1Gi
+    min:
+      cpu: 10m
+      memory: 32Mi
+---
+# Quotas matter more here than usual: all three environments share ONE
+# 2-node cluster. Without a quota, a runaway dev HPA can starve prod.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: prod-quota
+  namespace: prod
+spec:
+  hard:
+    requests.cpu: "4"
+    requests.memory: 8Gi
+    limits.memory: 16Gi
+    pods: "60"
+    count/deployments.apps: "20"
+    services: "20"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: prod-limits
+  namespace: prod
+spec:
+  limits:
+  - type: Container
+    # Anything deployed without explicit resources gets these, so an
+    # un-reviewed manifest can't request a whole node.
+    default:
+      memory: 256Mi
+    defaultRequest:
+      cpu: 50m
+      memory: 96Mi
+    max:
+      memory: 1Gi
+    min:
+      cpu: 10m
+      memory: 32Mi

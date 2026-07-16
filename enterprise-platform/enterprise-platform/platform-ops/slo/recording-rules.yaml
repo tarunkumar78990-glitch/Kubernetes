@@ -1,0 +1,448 @@
+# SLO recording rules - PLAIN Prometheus format.
+#
+# NOTE: raw rule groups, NOT PrometheusRule CRDs. We run plain Prometheus, not
+# the Prometheus Operator, so it reads these directly via
+#   rule_files: /etc/prometheus/rules/*.yaml
+# A CRD here would never be read at all.
+#
+# Pattern from the Google SRE Workbook: record the success ratio over several
+# windows, then alert on BURN RATE rather than raw errors.
+#
+# Why burn rate: a 99.9% target allows 43 minutes of downtime per 30 days.
+# Alert on "error rate > 0" and you page for a blip costing 4 seconds of
+# budget. Alert on "burning 14.4x the sustainable rate" and you page only when
+# the incident will genuinely exhaust it.
+groups:
+- name: slo_recording
+  interval: 30s
+  rules:
+  - record: slo:frontend:availability_target
+    expr: 0.999
+  - record: slo:frontend:success_ratio5m
+    expr: |
+      sum(rate(http_requests_total{app="frontend",status_code!~"5.."}[5m]))
+      /
+      sum(rate(http_requests_total{app="frontend"}[5m]))
+  - record: slo:frontend:success_ratio30m
+    expr: |
+      sum(rate(http_requests_total{app="frontend",status_code!~"5.."}[30m]))
+      /
+      sum(rate(http_requests_total{app="frontend"}[30m]))
+  - record: slo:frontend:success_ratio1h
+    expr: |
+      sum(rate(http_requests_total{app="frontend",status_code!~"5.."}[1h]))
+      /
+      sum(rate(http_requests_total{app="frontend"}[1h]))
+  - record: slo:frontend:success_ratio6h
+    expr: |
+      sum(rate(http_requests_total{app="frontend",status_code!~"5.."}[6h]))
+      /
+      sum(rate(http_requests_total{app="frontend"}[6h]))
+  - record: slo:frontend:latency_good_ratio5m
+    expr: |
+      sum(rate(http_request_duration_seconds_bucket{app="frontend",le="0.5"}[5m]))
+      /
+      sum(rate(http_request_duration_seconds_count{app="frontend"}[5m]))
+  - record: slo:frontend:latency_good_ratio1h
+    expr: |
+      sum(rate(http_request_duration_seconds_bucket{app="frontend",le="0.5"}[1h]))
+      /
+      sum(rate(http_request_duration_seconds_count{app="frontend"}[1h]))
+  - record: slo:frontend:error_budget_remaining
+    expr: |
+      1 - (
+        (1 - (
+          sum(rate(http_requests_total{app="frontend",status_code!~"5.."}[30d]))
+          /
+          sum(rate(http_requests_total{app="frontend"}[30d]))
+        ))
+        /
+        0.001
+      )
+  - record: slo:checkout:availability_target
+    expr: 0.9995
+  - record: slo:checkout:success_ratio5m
+    expr: |
+      sum(rate(http_requests_total{app="checkout",status_code!~"5.."}[5m]))
+      /
+      sum(rate(http_requests_total{app="checkout"}[5m]))
+  - record: slo:checkout:success_ratio30m
+    expr: |
+      sum(rate(http_requests_total{app="checkout",status_code!~"5.."}[30m]))
+      /
+      sum(rate(http_requests_total{app="checkout"}[30m]))
+  - record: slo:checkout:success_ratio1h
+    expr: |
+      sum(rate(http_requests_total{app="checkout",status_code!~"5.."}[1h]))
+      /
+      sum(rate(http_requests_total{app="checkout"}[1h]))
+  - record: slo:checkout:success_ratio6h
+    expr: |
+      sum(rate(http_requests_total{app="checkout",status_code!~"5.."}[6h]))
+      /
+      sum(rate(http_requests_total{app="checkout"}[6h]))
+  - record: slo:checkout:latency_good_ratio5m
+    expr: |
+      sum(rate(http_request_duration_seconds_bucket{app="checkout",le="0.8"}[5m]))
+      /
+      sum(rate(http_request_duration_seconds_count{app="checkout"}[5m]))
+  - record: slo:checkout:latency_good_ratio1h
+    expr: |
+      sum(rate(http_request_duration_seconds_bucket{app="checkout",le="0.8"}[1h]))
+      /
+      sum(rate(http_request_duration_seconds_count{app="checkout"}[1h]))
+  - record: slo:checkout:error_budget_remaining
+    expr: |
+      1 - (
+        (1 - (
+          sum(rate(http_requests_total{app="checkout",status_code!~"5.."}[30d]))
+          /
+          sum(rate(http_requests_total{app="checkout"}[30d]))
+        ))
+        /
+        0.0005
+      )
+  - record: slo:payment:availability_target
+    expr: 0.9995
+  - record: slo:payment:success_ratio5m
+    expr: |
+      sum(rate(http_requests_total{app="payment",status_code!~"5.."}[5m]))
+      /
+      sum(rate(http_requests_total{app="payment"}[5m]))
+  - record: slo:payment:success_ratio30m
+    expr: |
+      sum(rate(http_requests_total{app="payment",status_code!~"5.."}[30m]))
+      /
+      sum(rate(http_requests_total{app="payment"}[30m]))
+  - record: slo:payment:success_ratio1h
+    expr: |
+      sum(rate(http_requests_total{app="payment",status_code!~"5.."}[1h]))
+      /
+      sum(rate(http_requests_total{app="payment"}[1h]))
+  - record: slo:payment:success_ratio6h
+    expr: |
+      sum(rate(http_requests_total{app="payment",status_code!~"5.."}[6h]))
+      /
+      sum(rate(http_requests_total{app="payment"}[6h]))
+  - record: slo:payment:latency_good_ratio5m
+    expr: |
+      sum(rate(http_request_duration_seconds_bucket{app="payment",le="0.5"}[5m]))
+      /
+      sum(rate(http_request_duration_seconds_count{app="payment"}[5m]))
+  - record: slo:payment:latency_good_ratio1h
+    expr: |
+      sum(rate(http_request_duration_seconds_bucket{app="payment",le="0.5"}[1h]))
+      /
+      sum(rate(http_request_duration_seconds_count{app="payment"}[1h]))
+  - record: slo:payment:error_budget_remaining
+    expr: |
+      1 - (
+        (1 - (
+          sum(rate(http_requests_total{app="payment",status_code!~"5.."}[30d]))
+          /
+          sum(rate(http_requests_total{app="payment"}[30d]))
+        ))
+        /
+        0.0005
+      )
+  - record: slo:order:availability_target
+    expr: 0.999
+  - record: slo:order:success_ratio5m
+    expr: |
+      sum(rate(http_requests_total{app="order",status_code!~"5.."}[5m]))
+      /
+      sum(rate(http_requests_total{app="order"}[5m]))
+  - record: slo:order:success_ratio30m
+    expr: |
+      sum(rate(http_requests_total{app="order",status_code!~"5.."}[30m]))
+      /
+      sum(rate(http_requests_total{app="order"}[30m]))
+  - record: slo:order:success_ratio1h
+    expr: |
+      sum(rate(http_requests_total{app="order",status_code!~"5.."}[1h]))
+      /
+      sum(rate(http_requests_total{app="order"}[1h]))
+  - record: slo:order:success_ratio6h
+    expr: |
+      sum(rate(http_requests_total{app="order",status_code!~"5.."}[6h]))
+      /
+      sum(rate(http_requests_total{app="order"}[6h]))
+  - record: slo:order:latency_good_ratio5m
+    expr: |
+      sum(rate(http_request_duration_seconds_bucket{app="order",le="0.4"}[5m]))
+      /
+      sum(rate(http_request_duration_seconds_count{app="order"}[5m]))
+  - record: slo:order:latency_good_ratio1h
+    expr: |
+      sum(rate(http_request_duration_seconds_bucket{app="order",le="0.4"}[1h]))
+      /
+      sum(rate(http_request_duration_seconds_count{app="order"}[1h]))
+  - record: slo:order:error_budget_remaining
+    expr: |
+      1 - (
+        (1 - (
+          sum(rate(http_requests_total{app="order",status_code!~"5.."}[30d]))
+          /
+          sum(rate(http_requests_total{app="order"}[30d]))
+        ))
+        /
+        0.001
+      )
+  - record: slo:user_auth:availability_target
+    expr: 0.9995
+  - record: slo:user_auth:success_ratio5m
+    expr: |
+      sum(rate(http_requests_total{app="user-auth",status_code!~"5.."}[5m]))
+      /
+      sum(rate(http_requests_total{app="user-auth"}[5m]))
+  - record: slo:user_auth:success_ratio30m
+    expr: |
+      sum(rate(http_requests_total{app="user-auth",status_code!~"5.."}[30m]))
+      /
+      sum(rate(http_requests_total{app="user-auth"}[30m]))
+  - record: slo:user_auth:success_ratio1h
+    expr: |
+      sum(rate(http_requests_total{app="user-auth",status_code!~"5.."}[1h]))
+      /
+      sum(rate(http_requests_total{app="user-auth"}[1h]))
+  - record: slo:user_auth:success_ratio6h
+    expr: |
+      sum(rate(http_requests_total{app="user-auth",status_code!~"5.."}[6h]))
+      /
+      sum(rate(http_requests_total{app="user-auth"}[6h]))
+  - record: slo:user_auth:latency_good_ratio5m
+    expr: |
+      sum(rate(http_request_duration_seconds_bucket{app="user-auth",le="0.4"}[5m]))
+      /
+      sum(rate(http_request_duration_seconds_count{app="user-auth"}[5m]))
+  - record: slo:user_auth:latency_good_ratio1h
+    expr: |
+      sum(rate(http_request_duration_seconds_bucket{app="user-auth",le="0.4"}[1h]))
+      /
+      sum(rate(http_request_duration_seconds_count{app="user-auth"}[1h]))
+  - record: slo:user_auth:error_budget_remaining
+    expr: |
+      1 - (
+        (1 - (
+          sum(rate(http_requests_total{app="user-auth",status_code!~"5.."}[30d]))
+          /
+          sum(rate(http_requests_total{app="user-auth"}[30d]))
+        ))
+        /
+        0.0005
+      )
+  - record: slo:cart:availability_target
+    expr: 0.999
+  - record: slo:cart:success_ratio5m
+    expr: |
+      sum(rate(http_requests_total{app="cart",status_code!~"5.."}[5m]))
+      /
+      sum(rate(http_requests_total{app="cart"}[5m]))
+  - record: slo:cart:success_ratio30m
+    expr: |
+      sum(rate(http_requests_total{app="cart",status_code!~"5.."}[30m]))
+      /
+      sum(rate(http_requests_total{app="cart"}[30m]))
+  - record: slo:cart:success_ratio1h
+    expr: |
+      sum(rate(http_requests_total{app="cart",status_code!~"5.."}[1h]))
+      /
+      sum(rate(http_requests_total{app="cart"}[1h]))
+  - record: slo:cart:success_ratio6h
+    expr: |
+      sum(rate(http_requests_total{app="cart",status_code!~"5.."}[6h]))
+      /
+      sum(rate(http_requests_total{app="cart"}[6h]))
+  - record: slo:cart:latency_good_ratio5m
+    expr: |
+      sum(rate(http_request_duration_seconds_bucket{app="cart",le="0.3"}[5m]))
+      /
+      sum(rate(http_request_duration_seconds_count{app="cart"}[5m]))
+  - record: slo:cart:latency_good_ratio1h
+    expr: |
+      sum(rate(http_request_duration_seconds_bucket{app="cart",le="0.3"}[1h]))
+      /
+      sum(rate(http_request_duration_seconds_count{app="cart"}[1h]))
+  - record: slo:cart:error_budget_remaining
+    expr: |
+      1 - (
+        (1 - (
+          sum(rate(http_requests_total{app="cart",status_code!~"5.."}[30d]))
+          /
+          sum(rate(http_requests_total{app="cart"}[30d]))
+        ))
+        /
+        0.001
+      )
+  - record: slo:product_catalog:availability_target
+    expr: 0.999
+  - record: slo:product_catalog:success_ratio5m
+    expr: |
+      sum(rate(http_requests_total{app="product-catalog",status_code!~"5.."}[5m]))
+      /
+      sum(rate(http_requests_total{app="product-catalog"}[5m]))
+  - record: slo:product_catalog:success_ratio30m
+    expr: |
+      sum(rate(http_requests_total{app="product-catalog",status_code!~"5.."}[30m]))
+      /
+      sum(rate(http_requests_total{app="product-catalog"}[30m]))
+  - record: slo:product_catalog:success_ratio1h
+    expr: |
+      sum(rate(http_requests_total{app="product-catalog",status_code!~"5.."}[1h]))
+      /
+      sum(rate(http_requests_total{app="product-catalog"}[1h]))
+  - record: slo:product_catalog:success_ratio6h
+    expr: |
+      sum(rate(http_requests_total{app="product-catalog",status_code!~"5.."}[6h]))
+      /
+      sum(rate(http_requests_total{app="product-catalog"}[6h]))
+  - record: slo:product_catalog:latency_good_ratio5m
+    expr: |
+      sum(rate(http_request_duration_seconds_bucket{app="product-catalog",le="0.3"}[5m]))
+      /
+      sum(rate(http_request_duration_seconds_count{app="product-catalog"}[5m]))
+  - record: slo:product_catalog:latency_good_ratio1h
+    expr: |
+      sum(rate(http_request_duration_seconds_bucket{app="product-catalog",le="0.3"}[1h]))
+      /
+      sum(rate(http_request_duration_seconds_count{app="product-catalog"}[1h]))
+  - record: slo:product_catalog:error_budget_remaining
+    expr: |
+      1 - (
+        (1 - (
+          sum(rate(http_requests_total{app="product-catalog",status_code!~"5.."}[30d]))
+          /
+          sum(rate(http_requests_total{app="product-catalog"}[30d]))
+        ))
+        /
+        0.001
+      )
+  - record: slo:shipping:availability_target
+    expr: 0.995
+  - record: slo:shipping:success_ratio5m
+    expr: |
+      sum(rate(http_requests_total{app="shipping",status_code!~"5.."}[5m]))
+      /
+      sum(rate(http_requests_total{app="shipping"}[5m]))
+  - record: slo:shipping:success_ratio30m
+    expr: |
+      sum(rate(http_requests_total{app="shipping",status_code!~"5.."}[30m]))
+      /
+      sum(rate(http_requests_total{app="shipping"}[30m]))
+  - record: slo:shipping:success_ratio1h
+    expr: |
+      sum(rate(http_requests_total{app="shipping",status_code!~"5.."}[1h]))
+      /
+      sum(rate(http_requests_total{app="shipping"}[1h]))
+  - record: slo:shipping:success_ratio6h
+    expr: |
+      sum(rate(http_requests_total{app="shipping",status_code!~"5.."}[6h]))
+      /
+      sum(rate(http_requests_total{app="shipping"}[6h]))
+  - record: slo:shipping:latency_good_ratio5m
+    expr: |
+      sum(rate(http_request_duration_seconds_bucket{app="shipping",le="0.5"}[5m]))
+      /
+      sum(rate(http_request_duration_seconds_count{app="shipping"}[5m]))
+  - record: slo:shipping:latency_good_ratio1h
+    expr: |
+      sum(rate(http_request_duration_seconds_bucket{app="shipping",le="0.5"}[1h]))
+      /
+      sum(rate(http_request_duration_seconds_count{app="shipping"}[1h]))
+  - record: slo:shipping:error_budget_remaining
+    expr: |
+      1 - (
+        (1 - (
+          sum(rate(http_requests_total{app="shipping",status_code!~"5.."}[30d]))
+          /
+          sum(rate(http_requests_total{app="shipping"}[30d]))
+        ))
+        /
+        0.005
+      )
+  - record: slo:notification:availability_target
+    expr: 0.99
+  - record: slo:notification:success_ratio5m
+    expr: |
+      sum(rate(http_requests_total{app="notification",status_code!~"5.."}[5m]))
+      /
+      sum(rate(http_requests_total{app="notification"}[5m]))
+  - record: slo:notification:success_ratio30m
+    expr: |
+      sum(rate(http_requests_total{app="notification",status_code!~"5.."}[30m]))
+      /
+      sum(rate(http_requests_total{app="notification"}[30m]))
+  - record: slo:notification:success_ratio1h
+    expr: |
+      sum(rate(http_requests_total{app="notification",status_code!~"5.."}[1h]))
+      /
+      sum(rate(http_requests_total{app="notification"}[1h]))
+  - record: slo:notification:success_ratio6h
+    expr: |
+      sum(rate(http_requests_total{app="notification",status_code!~"5.."}[6h]))
+      /
+      sum(rate(http_requests_total{app="notification"}[6h]))
+  - record: slo:notification:latency_good_ratio5m
+    expr: |
+      sum(rate(http_request_duration_seconds_bucket{app="notification",le="1.0"}[5m]))
+      /
+      sum(rate(http_request_duration_seconds_count{app="notification"}[5m]))
+  - record: slo:notification:latency_good_ratio1h
+    expr: |
+      sum(rate(http_request_duration_seconds_bucket{app="notification",le="1.0"}[1h]))
+      /
+      sum(rate(http_request_duration_seconds_count{app="notification"}[1h]))
+  - record: slo:notification:error_budget_remaining
+    expr: |
+      1 - (
+        (1 - (
+          sum(rate(http_requests_total{app="notification",status_code!~"5.."}[30d]))
+          /
+          sum(rate(http_requests_total{app="notification"}[30d]))
+        ))
+        /
+        0.01
+      )
+  - record: slo:recommendation:availability_target
+    expr: 0.99
+  - record: slo:recommendation:success_ratio5m
+    expr: |
+      sum(rate(http_requests_total{app="recommendation",status_code!~"5.."}[5m]))
+      /
+      sum(rate(http_requests_total{app="recommendation"}[5m]))
+  - record: slo:recommendation:success_ratio30m
+    expr: |
+      sum(rate(http_requests_total{app="recommendation",status_code!~"5.."}[30m]))
+      /
+      sum(rate(http_requests_total{app="recommendation"}[30m]))
+  - record: slo:recommendation:success_ratio1h
+    expr: |
+      sum(rate(http_requests_total{app="recommendation",status_code!~"5.."}[1h]))
+      /
+      sum(rate(http_requests_total{app="recommendation"}[1h]))
+  - record: slo:recommendation:success_ratio6h
+    expr: |
+      sum(rate(http_requests_total{app="recommendation",status_code!~"5.."}[6h]))
+      /
+      sum(rate(http_requests_total{app="recommendation"}[6h]))
+  - record: slo:recommendation:latency_good_ratio5m
+    expr: |
+      sum(rate(http_request_duration_seconds_bucket{app="recommendation",le="0.4"}[5m]))
+      /
+      sum(rate(http_request_duration_seconds_count{app="recommendation"}[5m]))
+  - record: slo:recommendation:latency_good_ratio1h
+    expr: |
+      sum(rate(http_request_duration_seconds_bucket{app="recommendation",le="0.4"}[1h]))
+      /
+      sum(rate(http_request_duration_seconds_count{app="recommendation"}[1h]))
+  - record: slo:recommendation:error_budget_remaining
+    expr: |
+      1 - (
+        (1 - (
+          sum(rate(http_requests_total{app="recommendation",status_code!~"5.."}[30d]))
+          /
+          sum(rate(http_requests_total{app="recommendation"}[30d]))
+        ))
+        /
+        0.01
+      )

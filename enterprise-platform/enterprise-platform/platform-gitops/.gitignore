@@ -1,0 +1,9 @@
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# This repo holds rendered manifests only. Never secrets.
+*.tfvars
+*-key.json
+credentials.json

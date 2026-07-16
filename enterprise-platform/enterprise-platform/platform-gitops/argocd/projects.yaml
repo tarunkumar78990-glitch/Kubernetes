@@ -1,0 +1,112 @@
+# An AppProject is a security boundary. Without one, every Application runs
+# in the 'default' project, which permits any repo to deploy any resource
+# to any namespace. That is not a boundary, it is a suggestion.
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: dev
+  namespace: argocd
+  finalizers:
+  - resources-finalizer.argocd.argoproj.io
+spec:
+  description: Development environment
+  sourceRepos:
+  - https://github.com/YOUR_ORG/platform-gitops.git
+  destinations:
+  - server: https://kubernetes.default.svc
+    namespace: dev
+  clusterResourceWhitelist: []
+  namespaceResourceWhitelist:
+  - group: ''
+    kind: Service
+  - group: ''
+    kind: ServiceAccount
+  - group: ''
+    kind: ConfigMap
+  - group: apps
+    kind: Deployment
+  - group: autoscaling
+    kind: HorizontalPodAutoscaler
+  - group: policy
+    kind: PodDisruptionBudget
+  - group: networking.k8s.io
+    kind: NetworkPolicy
+  - group: cloud.google.com
+    kind: BackendConfig
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: staging
+  namespace: argocd
+  finalizers:
+  - resources-finalizer.argocd.argoproj.io
+spec:
+  description: Staging environment
+  sourceRepos:
+  - https://github.com/YOUR_ORG/platform-gitops.git
+  destinations:
+  - server: https://kubernetes.default.svc
+    namespace: staging
+  clusterResourceWhitelist: []
+  namespaceResourceWhitelist:
+  - group: ''
+    kind: Service
+  - group: ''
+    kind: ServiceAccount
+  - group: ''
+    kind: ConfigMap
+  - group: apps
+    kind: Deployment
+  - group: autoscaling
+    kind: HorizontalPodAutoscaler
+  - group: policy
+    kind: PodDisruptionBudget
+  - group: networking.k8s.io
+    kind: NetworkPolicy
+  - group: cloud.google.com
+    kind: BackendConfig
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: prod
+  namespace: argocd
+  finalizers:
+  - resources-finalizer.argocd.argoproj.io
+spec:
+  description: Production. Manual sync only.
+  sourceRepos:
+  - https://github.com/YOUR_ORG/platform-gitops.git
+  destinations:
+  - server: https://kubernetes.default.svc
+    namespace: prod
+  clusterResourceWhitelist: []
+  namespaceResourceWhitelist:
+  - group: ''
+    kind: Service
+  - group: ''
+    kind: ServiceAccount
+  - group: ''
+    kind: ConfigMap
+  - group: apps
+    kind: Deployment
+  - group: autoscaling
+    kind: HorizontalPodAutoscaler
+  - group: policy
+    kind: PodDisruptionBudget
+  - group: networking.k8s.io
+    kind: NetworkPolicy
+  - group: cloud.google.com
+    kind: BackendConfig
+
+  # Prod gets a sync window: no automatic syncing during business hours,
+  # even if someone flips the policy. A guard rail, not a lock.
+  syncWindows:
+  - kind: deny
+    schedule: '0 10 * * 1-5'
+    duration: 8h
+    applications:
+    - '*'
+    manualSync: true   # humans can still sync deliberately

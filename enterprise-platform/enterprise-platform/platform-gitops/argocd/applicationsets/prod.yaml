@@ -1,0 +1,46 @@
+# ApplicationSet: prod
+#
+# MANUAL sync. There is no `automated` block. Argo CD will show prod as
+# OutOfSync and wait for a human to click Sync.
+#
+# That button IS the approval gate - the same role the Jenkins `input` step
+# played before GitOps. The difference: the diff being approved is now the
+# actual rendered YAML, not a build number.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: prod-microservices
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions:
+  - missingkey=error
+  generators:
+  - git:
+      repoURL: https://github.com/YOUR_ORG/platform-gitops.git
+      revision: main
+      directories:
+      - path: envs/prod/*
+  template:
+    metadata:
+      name: prod-{{.path.basename}}
+      labels:
+        env: prod
+        service: '{{.path.basename}}'
+      finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    spec:
+      project: prod
+      source:
+        repoURL: https://github.com/YOUR_ORG/platform-gitops.git
+        targetRevision: main
+        path: '{{.path.path}}'
+        directory:
+          recurse: false
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: prod
+      revisionHistoryLimit: 10
+      syncPolicy:
+        syncOptions:
+        - CreateNamespace=false

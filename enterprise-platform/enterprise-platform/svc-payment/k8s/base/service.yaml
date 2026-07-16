@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment
+  namespace: ${NAMESPACE}
+  labels:
+    app: payment
+    env: ${ENVIRONMENT}
+spec:
+  type: ClusterIP
+  selector:
+    app: payment
+  ports:
+  - name: http
+    port: 8080
+    targetPort: http
+    protocol: TCP

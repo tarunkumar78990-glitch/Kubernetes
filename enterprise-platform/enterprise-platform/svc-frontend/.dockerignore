@@ -1,0 +1,16 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+.github
+coverage
+.nyc_output
+tests
+__tests__
+*.test.js
+k8s
+Jenkinsfile
+README.md
+.env
+*.json.key
+.scannerwork

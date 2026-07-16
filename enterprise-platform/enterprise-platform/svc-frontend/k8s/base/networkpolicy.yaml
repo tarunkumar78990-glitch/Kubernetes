@@ -1,0 +1,105 @@
+# Default-deny is applied at the namespace level (platform-ops).
+# This policy opens only the paths this service genuinely needs.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: frontend
+  namespace: ${NAMESPACE}
+  labels:
+    app: frontend
+spec:
+  podSelector:
+    matchLabels:
+      app: frontend
+
+  policyTypes:
+  - Ingress
+  - Egress
+
+  ingress:
+  # Public entrypoint: allow the GKE ingress/load balancer.
+  - from:
+    - namespaceSelector: {}
+      podSelector:
+        matchLabels:
+          app: gateway
+  - from:
+    - ipBlock:
+        # GCP health check + LB ranges
+        cidr: 130.211.0.0/22
+  - from:
+    - ipBlock:
+        cidr: 35.191.0.0/16
+    ports:
+    - protocol: TCP
+      port: 8080
+
+  # Prometheus scraping
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    ports:
+    - protocol: TCP
+      port: 8080
+
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: product-catalog
+    ports:
+    - protocol: TCP
+      port: 8080
+  - to:
+    - podSelector:
+        matchLabels:
+          app: cart
+    ports:
+    - protocol: TCP
+      port: 8080
+  - to:
+    - podSelector:
+        matchLabels:
+          app: order
+    ports:
+    - protocol: TCP
+      port: 8080
+  - to:
+    - podSelector:
+        matchLabels:
+          app: recommendation
+    ports:
+    - protocol: TCP
+      port: 8080
+  - to:
+    - podSelector:
+        matchLabels:
+          app: checkout
+    ports:
+    - protocol: TCP
+      port: 8080
+  # DNS - without this every outbound call fails in a way that looks
+  # like a random timeout. The single most common NetworkPolicy mistake.
+  - to:
+    - namespaceSelector: {}
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+
+  # GCP APIs (Secret Manager, logging) over HTTPS
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+    ports:
+    - protocol: TCP
+      port: 443

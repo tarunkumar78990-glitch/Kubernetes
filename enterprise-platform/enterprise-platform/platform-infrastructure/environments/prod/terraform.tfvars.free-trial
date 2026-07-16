@@ -1,0 +1,71 @@
+# ============================================================================
+# FREE TRIAL PROFILE  --  fits 8 vCPU / 250GB SSD
+# ============================================================================
+#   cp terraform.tfvars.free-trial terraform.tfvars
+#   # fill in project_id + your IP, then: terraform apply
+#
+# WHAT IT COSTS YOU (vs the default profile):
+#
+#   vCPU:          16.25  ->  6.75     (limit 8)
+#   SSD_TOTAL_GB:    720  ->     0     (limit 250)
+#
+# THE TWO CHANGES THAT MATTER
+#
+# 1. disk_type = "pd-standard"
+#    pd-balanced counts against SSD_TOTAL_GB. pd-standard counts against
+#    DISKS_TOTAL_GB instead, which free-trial projects have plenty of.
+#    This single line takes SSD from 720GB to 0 and kills that wall entirely.
+#    Cost: HDD-backed. Slower IOPS. Builds and SonarQube feel sluggish.
+#
+# 2. Smaller machines.
+#    E2 shared-core types consume FRACTIONAL vCPU quota:
+#      e2-micro = 0.25   e2-small = 0.5   e2-medium = 1.0
+#    That is what makes 4 tooling VMs affordable inside 8 vCPU.
+#
+# WHY GKE NODES ARE e2-standard-2, NOT e2-medium
+#    e2-medium would save 2 vCPU but gives only 8GB across the whole cluster.
+#    After kube-system that is ~5.8GB for 10 microservices + Prometheus +
+#    Grafana + (Part 6) Argo CD. It does not fit. e2-standard-2 gives 16GB
+#    and dedicated cores. Spend the quota here - this is where the work happens.
+#
+# STILL EXACTLY 2 NODES. The hard requirement is intact.
+# ============================================================================
+
+project_id = "REPLACE_ME"
+region     = "asia-south1"
+zone       = "asia-south1-a"
+
+authorized_cidrs = [
+  {
+    cidr_block   = "1.2.3.4/32" # curl -s ifconfig.me
+    display_name = "my-workstation"
+  },
+  {
+    cidr_block   = "10.10.16.0/24"
+    display_name = "tooling-subnet"
+  },
+]
+
+# ---- The line that removes the SSD wall ----
+disk_type = "pd-standard"
+
+# ---- GKE: 2 nodes, 2 dedicated vCPU + 8GB each = 4.00 vCPU ----
+machine_type      = "e2-standard-2"
+node_disk_size_gb = 50
+
+# ---- Tooling: 2.75 vCPU total, thanks to fractional shared-core ----
+jenkins_controller_machine_type = "e2-small"  # 0.50 vCPU, 2GB. Orchestration only.
+jenkins_agent_machine_type      = "e2-medium" # 1.00 vCPU, 4GB. Docker builds.
+sonarqube_machine_type          = "e2-medium" # 1.00 vCPU, 4GB. See warning below.
+
+# SONARQUBE WARNING: 4GB is the documented floor and Elasticsearch will be
+# unhappy. If the container restart-loops, add swap on that VM:
+#   sudo fallocate -l 4G /swapfile && sudo chmod 600 /swapfile
+#   sudo mkswap /swapfile && sudo swapon /swapfile
+# Not something you would ever do in production. Fine for learning.
+
+jenkins_controller_disk_gb = 20
+jenkins_home_disk_gb       = 30
+jenkins_agent_disk_gb      = 60 # below this you WILL hit no-space-left mid-build
+sonarqube_disk_gb          = 20
+sonar_data_disk_gb         = 30

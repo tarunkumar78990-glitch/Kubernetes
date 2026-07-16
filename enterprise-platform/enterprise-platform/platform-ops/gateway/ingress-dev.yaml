@@ -1,0 +1,33 @@
+# External HTTP(S) load balancer for the dev frontend.
+#
+# Applied MANUALLY, per environment. It deliberately does not live in
+# svc-frontend/k8s/base/ because deploy.sh applies that whole directory to
+# every environment - which would give you three external load balancers
+# and three bills.
+#
+# Provisioning takes 5-10 minutes. A 502 during that window is normal.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: frontend
+  namespace: dev
+  annotations:
+    kubernetes.io/ingress.class: "gce"
+    # For HTTPS, reserve a static IP and a ManagedCertificate:
+    #   kubernetes.io/ingress.global-static-ip-name: "dev-frontend-ip"
+    #   networking.gke.io/managed-certificates: "frontend-cert"
+    #   kubernetes.io/ingress.allow-http: "false"
+  labels:
+    app: frontend
+    env: dev
+spec:
+  rules:
+  - http:
+      paths:
+      - path: /*
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: frontend
+            port:
+              number: 8080
